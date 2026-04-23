@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         X 分享到 Discord (fixupx)
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0
+// @version      1.3.1
 // @description  在 X 分享彈窗加入「分享到 Discord」按鈕，將分享連結轉為 fixupx 後送至 webhook
 // @author       Lin_tsen
 // @match        *://x.com/*
