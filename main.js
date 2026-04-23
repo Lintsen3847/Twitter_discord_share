@@ -36,6 +36,7 @@
 
 	function showToast(message, isError) {
 		const toast = document.createElement('div');
+		toast.className = 'x-discord-toast';
 		toast.textContent = message;
 		toast.style.cssText = [
 			'position: fixed',
@@ -66,6 +67,18 @@
 			toast.style.transform = 'translateY(8px)';
 			setTimeout(() => toast.remove(), 220);
 		}, 2200);
+	}
+
+	function debounce(fn, ms) {
+		let timer = null;
+		return (...args) => {
+			if (timer) {
+				clearTimeout(timer);
+			}
+			timer = setTimeout(() => {
+				fn(...args);
+			}, ms);
+		};
 	}
 
 	function normalizeWebhookUrl(input) {
@@ -670,9 +683,21 @@
 	}
 
 	async function postToAllDiscordWebhooks(webhookUrls, sharedUrl) {
-		const results = await Promise.allSettled(
-			webhookUrls.map((webhookUrl) => postToDiscord(webhookUrl, sharedUrl))
-		);
+		const CONCURRENCY_LIMIT = 3;
+		const results = [];
+
+		for (let i = 0; i < webhookUrls.length; i += CONCURRENCY_LIMIT) {
+			const batch = webhookUrls.slice(i, i + CONCURRENCY_LIMIT);
+			const batchResults = await Promise.allSettled(
+				batch.map((webhookUrl) => postToDiscord(webhookUrl, sharedUrl))
+			);
+			results.push(...batchResults);
+
+			// Small delay between batches to avoid Discord rate limiting
+			if (i + CONCURRENCY_LIMIT < webhookUrls.length) {
+				await new Promise((resolve) => setTimeout(resolve, 200));
+			}
+		}
 
 		const successCount = results.filter((result) => result.status === 'fulfilled').length;
 		const failedResults = results.filter((result) => result.status === 'rejected');
@@ -851,29 +876,33 @@
 				return;
 			}
 
+			// Reset context for each new share click to prevent stale URLs
+			lastSharedPostUrl = '';
+
 			const article = shareButton.closest('article') || findArticleInPath(path);
 			const postUrl = getPostUrlFromArticle(article);
 			if (postUrl) {
 				lastSharedPostUrl = postUrl;
-				return;
 			}
-
-			lastSharedPostUrl = '';
 		}, true);
 	}
 
 	function setupDialogObserver() {
-		const observer = new MutationObserver(() => {
+		const observer = new MutationObserver(debounce(() => {
 			const dropdowns = document.querySelectorAll(DROPDOWN_SELECTOR);
 			dropdowns.forEach((dropdown) => {
 				injectDiscordButton(dropdown);
 			});
-		});
+		}, 50));
 
 		observer.observe(document.body, {
 			childList: true,
 			subtree: true
 		});
+
+		window.addEventListener('beforeunload', () => {
+			observer.disconnect();
+		}, { once: true });
 
 		const existingDropdowns = document.querySelectorAll(DROPDOWN_SELECTOR);
 		existingDropdowns.forEach((dropdown) => {
